@@ -1,9 +1,9 @@
-import { grammar, Grammar } from "ohm-js";
+import { grammar, Grammar, Matcher } from "ohm-js";
 import * as fse from "fs-extra";
 import * as path from "path";
 import { FileSystem, DocumentFolder } from "./fileSystem";
 import { GMLHoverProvider } from "./hover";
-import { timeUtil } from "./utils";
+import { timeUtil, getIndexFromPosition } from "./utils";
 import {
 	IConnection,
 	Diagnostic,
@@ -163,10 +163,11 @@ export class LSP {
 
 		const thisDiagnostic = await this.fsManager.getDiagnosticHandler(uri);
 		await thisDiagnostic.setInput(text);
+		const success = thisDiagnostic.match();
 		this.fsManager.addDocument(uri, text);
 		this.fsManager.addOpenDocument(uri);
 
-		const finalDiagnosticPackage = await this.lint(thisDiagnostic, SemanticsOption.All);
+		const finalDiagnosticPackage = await this.lint(thisDiagnostic, SemanticsOption.All, success);
 
 		// Send Final Diagnostics
 		this.connection.sendDiagnostics(DiagnosticsPackage.create(uri, finalDiagnosticPackage));
@@ -177,16 +178,49 @@ export class LSP {
 
 		// Find our Diagnostic:
 		const thisDiagnostic = await this.fsManager.getDiagnosticHandler(uri);
+		const currentText = thisDiagnostic.getInput();
 
-		// Set our Input: TODO make this server actually incremental.
-		for (const contentChange of contentChanges) {
-			await thisDiagnostic.setInput(contentChange.text);
+		// We're goin incremental!:
+		for (const  contentChange of contentChanges) {
+			// Calculate our new Ranges:
+			let startIdx = getIndexFromPosition(currentText, contentChange.range.start);
+			let endIdx = getIndexFromPosition(currentText, contentChange.range.end);
+			const changeLength = endIdx - startIdx;
+
+			// Is this an insertion? (no jokes pls.)
+			if (changeLength == 0) {
+				console.log("Added new text.");
+				
+				if (startIdx == currentText.length) {
+					console.log("Set Input (slow)");
+					thisDiagnostic.setInput(currentText + contentChange.text);
+				} else {
+					console.log("Replaced input (fast)")
+					thisDiagnostic.matcher.replaceInputRange(startIdx, endIdx, contentChange.text);
+				}
+			} else {
+				console.log("This is a deletion or replacement. (fast)")
+				// This is a delete or a replace. Both work for ohm.
+				thisDiagnostic.matcher.replaceInputRange(startIdx, endIdx, contentChange.text);
+			}
+
+			// Actually put it in the matcher:
+			thisDiagnostic.currentFullTextDocument = thisDiagnostic.matcher.getInput();
 		}
+		const success = thisDiagnostic.match();
 
-		this.fsManager.addDocument(uri, thisDiagnostic.getInput());
-		const finalDiagnosticPackage = await this.lint(thisDiagnostic, SemanticsOption.All);
+		this.fsManager.addDocument(uri, currentText);
+		this.timer.setTimeFast();
+		const savedMatcher = JSON.parse(JSON.stringify(thisDiagnostic.matcher));
+		const finalDiagnosticPackage = await this.lint(thisDiagnostic, SemanticsOption.All, success);
 		// Send Final Diagnostics
 		this.connection.sendDiagnostics(DiagnosticsPackage.create(uri, finalDiagnosticPackage));
+
+		// Put our Matcher back where we found it:
+		thisDiagnostic.matcher.input = savedMatcher.input;
+		thisDiagnostic.matcher.memoTable = savedMatcher.memoTable;
+		console.log("Linting took: " + this.timer.timeDifferenceNowNice());
+		console.log(process.memoryUsage().heapTotal / (1024 * 1024) + "MB");
 	}
 	//#endregion
 
@@ -198,8 +232,8 @@ export class LSP {
 		return lintPackage;
 	}
 
-	public async getMatchResultsPackage(thisDiagnostic: DiagnosticHandler, lintPackage: LintPackage) {
-		if (thisDiagnostic.match() == false) {
+	public async getMatchResultsPackage(thisDiagnostic: DiagnosticHandler, lintPackage: LintPackage, success: boolean) {
+		if (!success) {
 			await thisDiagnostic.primarySyntaxLint(lintPackage);
 
 			return lintPackage.getDiagnostics();
@@ -218,14 +252,10 @@ export class LSP {
 		}
 	}
 
-	public async lint(thisDiagnostic: DiagnosticHandler, bit: SemanticsOption) {
+	public async lint(thisDiagnostic: DiagnosticHandler, bit: SemanticsOption, succesfulMatch: boolean) {
 		let lintPack = await this.initLint(thisDiagnostic);
-		// this.timer.setTimeFast();
-		const initDiagnostics = await this.getMatchResultsPackage(thisDiagnostic, lintPack);
-		// console.log("Our normal syntax lint took " + this.timer.timeDifferenceNowNice());
-		// this.timer.setTimeFast();
+		const initDiagnostics = await this.getMatchResultsPackage(thisDiagnostic, lintPack, succesfulMatch);
 		const semDiagnostics = await this.runSemantics(thisDiagnostic, lintPack, bit);
-		// console.log("Our Semantics took " + this.timer.timeDifferenceNowNice());
 
 		return initDiagnostics.concat(semDiagnostics);
 	}
@@ -233,10 +263,10 @@ export class LSP {
 	public async runSemantics(thisDiagnostic: DiagnosticHandler, lintPackage: LintPackage, bit: SemanticsOption) {
 		let diagnosticArray: Diagnostic[] = [];
 
-		// Semantic Lint
+		// Function Lint
 		if ((bit & SemanticsOption.Function) == SemanticsOption.Function) {
 			diagnosticArray = diagnosticArray.concat(
-				await this.semanticLint(thisDiagnostic, lintPackage, diagnosticArray)
+				await this.functionLint(thisDiagnostic, lintPackage, diagnosticArray)
 			);
 		}
 
@@ -261,7 +291,7 @@ export class LSP {
 		return diagnosticArray;
 	}
 
-	public async semanticLint(
+	public async functionLint(
 		thisDiagnostic: DiagnosticHandler,
 		lintPackage: LintPackage,
 		diagnosticArray: Diagnostic[]

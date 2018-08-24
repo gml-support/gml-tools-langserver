@@ -144,12 +144,12 @@ export class DiagnosticHandler {
 	private globalQuickCheck: Array<string>;
 	private functionStack: Array<GMLFunctionStack>;
 	private semanticDiagnostics: Diagnostic[];
-	private matcher: any; // Matcher, but with more stuff.
+	public matcher: any; // Matcher, but with more stuff.
 	private actionDictionaries: Array<IActionDict>;
 	private matchResult: any; // MatchResult but with more stuff.
 	private semantics: Semantics;
 	private semanticIndex: number;
-	private currentFullTextDocument: string;
+	public currentFullTextDocument: string;
 	/** Avoid using this hanlde as much as possible. Should be eliminated asap. */
 	private reference: Reference;
 	/** Enums pushed go here.  */
@@ -339,9 +339,7 @@ export class DiagnosticHandler {
 				},
 
 				// Generic for Termins:
-				_terminal: function () {
-					return this.sourceString;
-				}
+				_terminal: function() {}
 			}
 		});
 		this.actionDictionaries.push({
@@ -393,7 +391,7 @@ export class DiagnosticHandler {
 				},
 
 				// Generic for Termins:
-				_terminal: function () {
+				_terminal: function() {
 					return this.sourceString;
 				}
 			}
@@ -440,7 +438,7 @@ export class DiagnosticHandler {
 				},
 
 				// Generic for Termins:
-				_terminal: function () {
+				_terminal: function() {
 					return this.sourceString;
 				}
 			}
@@ -467,7 +465,7 @@ export class DiagnosticHandler {
 					// Set up
 					let thisParam: JSDOCParameter = {
 						documentation: "",
-						label: "",
+						label: ""
 					};
 
 					// // Add a type
@@ -512,7 +510,7 @@ export class DiagnosticHandler {
 					for (const thisArg of args) {
 						this.jsdocGenerated.parameters.push({
 							label: thisArg,
-							documentation: "",
+							documentation: ""
 							// type: ""
 						});
 					}
@@ -543,7 +541,7 @@ export class DiagnosticHandler {
 				},
 
 				// Generic for Termins:
-				_terminal: function () {
+				_terminal: function() {
 					return this.sourceString;
 				}
 			}
@@ -566,12 +564,12 @@ export class DiagnosticHandler {
 		this.matcher.setInput(this.currentFullTextDocument);
 	}
 
-	public replaceInputRange(range: Range, fullDocumentText: string): void {
+	public replaceInputRange(range: Range, fullDocumentText: string, newText: string): void {
 		// Convert Range to Absolute Position:
 		let startIdx = getIndexFromPosition(fullDocumentText, range.start);
 		let endIdx = getIndexFromPosition(fullDocumentText, range.end);
 
-		this.matcher.replaceInputRange(startIdx, endIdx, fullDocumentText);
+		this.matcher.replaceInputRange(startIdx, endIdx, newText);
 		this.currentFullTextDocument = this.matcher.getInput();
 	}
 
@@ -583,6 +581,7 @@ export class DiagnosticHandler {
 		this.matchResult = this.matcher.match(startRule);
 		return this.matchResult.succeeded();
 	}
+
 	//#endregion
 
 	/**
@@ -602,6 +601,8 @@ export class DiagnosticHandler {
 		if (this.matchResult == null) {
 			throw "ERROR you passed a LintPackage without an MatchResult!";
 		}
+
+		const dbugTimer = new timeUtil();
 
 		// Add our memoTable to the DiagnosticTable:
 		this.tokenList = [];
@@ -649,8 +650,8 @@ export class DiagnosticHandler {
 					this.pushToSalvagedMatchResults(sliceIndex, possibleSafeEndPosition, salvagedMatchResults);
 				//#endregion
 			}
-
 			// Go below the failure...
+
 			sliceIndex = regexIndexOf(fullTextDoc, /(;|{)/, currentFailure + sliceIndex);
 			if (sliceIndex == -1) {
 				didPassLint = false;
@@ -659,7 +660,7 @@ export class DiagnosticHandler {
 
 			// Reset Variables
 			forwardFullTextBlock = fullTextDoc.slice(sliceIndex);
-			this.matcher.setInput(forwardFullTextBlock);
+			dbugTimer.setTimeFast();
 			didPassLint = this.match();
 			currentFailure = this.matchResult.getRightmostFailurePosition();
 		}

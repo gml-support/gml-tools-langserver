@@ -262,7 +262,8 @@ gml {
         |   ArrayEntryLiteral
     
     DSLiteral
-        =   (mapAccessor | listAccessor | gridAccessor | arrayAccessor) ConditionalExpression "]"
+        =   (mapAccessor | listAccessor | arrayAccessor) ConditionalExpression "]"
+        |   gridAccessor NonemptyListOf<ConditionalExpression, comma> "]"
     ArrayEntryLiteral
         =   "[" NonemptyListOf<ConditionalExpression,comma> "]"
 

@@ -690,9 +690,10 @@ export class FileSystem {
 		await this.addDocument(fileURI.toString(), fileText);
 		const thisDiagnostic = await this.getDiagnosticHandler(fileURI.toString());
 		await thisDiagnostic.setInput(fileText);
+		const success = thisDiagnostic.match();
 
 		try {
-			await this.lsp.lint(thisDiagnostic, semanticsToRun);
+			await this.lsp.lint(thisDiagnostic, semanticsToRun, success);
 		} catch (error) {
 			console.log("Error at " + fpath + ". Error: " + error);
 		}

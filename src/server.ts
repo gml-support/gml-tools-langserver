@@ -28,7 +28,7 @@ connection.onInitialize((params) => {
 	return {
 		capabilities: {
 			// Tell the client that the server works in FULL text document sync mode
-			textDocumentSync: TextDocumentSyncKind.Full,
+			textDocumentSync: TextDocumentSyncKind.Incremental,
 			completionProvider: {
 				resolveProvider: true,
 				triggerCharacters: ["."]
